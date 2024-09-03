@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use rand::thread_rng;
 
 use super::*;
@@ -12,7 +14,7 @@ enum Alphabet {
 
 struct PD;
 impl PD {
-    const WEIGHTS: [u32; 4] = [10, 1100, 1900, 10000];
+    const WEIGHTS: [u32; 4] = [10, 1000, 10, 1];
 
     fn sample(&self, rng: &mut impl rand::Rng) -> Option<Alphabet> {
         let p = rng.gen_range(0..self.denominator());
@@ -37,7 +39,10 @@ impl Distribution<Alphabet, u32> for PD {
         Self::WEIGHTS.iter().sum()
     }
 
-    fn numerator_range(&self, symbol: Option<&Alphabet>) -> std::ops::Range<u32> {
+    fn numerator_range(
+        &self,
+        symbol: Option<&Alphabet>,
+    ) -> std::ops::Range<u32> {
         use Alphabet::*;
         let index = symbol
             .map(|s| match s {
@@ -76,7 +81,10 @@ impl SM {
     pub fn sample(&mut self, rng: &mut impl rand::Rng) {
         while let Some(s) = self.pd().sample(rng) {
             let p_range = PD::numerator_range(Some(&s));
-            assert!(p_range.start < p_range.end, "pd has empty range for {s:?}");
+            assert!(
+                p_range.start < p_range.end,
+                "pd has empty range for {s:?}"
+            );
             self.push(s)
         }
     }
@@ -102,12 +110,7 @@ fn test_symbols(symbols: &[Alphabet]) {
     let mut sm = SM(Vec::new());
     encoder.encode(&mut sm, symbols.iter().copied());
 
-    let bytes = encoder.finalyze();
-    //for byte in &bytes {
-    //    print!("_{byte:08b}");
-    //}
-    //
-    //println!();
+    let bytes = encoder.finalize();
 
     let mut decoder = ArithmeticDecoder32::new(bytes);
     let mut sm = SM(Vec::new());
@@ -118,28 +121,33 @@ fn test_symbols(symbols: &[Alphabet]) {
 
 #[test]
 fn test_as() {
-    let symbols = {
-        use Alphabet::*;
-        [A, A, A, A, A, A, A, A, A, A, A, A, A, A, A, A]
-    };
-
-    test_symbols(&symbols);
+    test_symbols(&[Alphabet::A; 320]);
 }
 
 #[test]
-fn test_random() {
+fn test_cs() {
+    test_symbols(&[Alphabet::C; 640]);
+}
+
+#[test]
+pub fn test_random() {
     let rng = &mut thread_rng();
     let num_tests = 100000;
+    let mut last_print = std::time::Instant::now();
 
-    print!("0/{num_tests}");
+    println!();
     for i in 0..num_tests {
         let mut sm = SM(Vec::new());
         sm.sample(rng);
         let symbols = sm.into_sequence();
 
         test_symbols(&symbols);
-        print!("\r{}/{num_tests}", i + 1);
+        if last_print.elapsed() > std::time::Duration::from_millis(200) {
+            print!("\r{}/{num_tests}", i + 1);
+            last_print = std::time::Instant::now();
+            let _ = std::io::stdout().flush();
+        }
     }
 
-    println!();
+    println!("{num_tests}/{num_tests}");
 }

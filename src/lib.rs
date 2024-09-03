@@ -13,7 +13,7 @@ pub trait SequenceModel<Symbol, P> {
     fn pd(&self) -> Self::ProbabilityDensity;
 }
 
-mod arith32;
+pub mod arith32;
 
 pub type ArithmeticEncoder = arith32::ArithmeticEncoder32;
 pub type ArithmeticDecoder<I> = arith32::ArithmeticDecoder32<I>;
