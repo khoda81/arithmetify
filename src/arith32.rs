@@ -7,6 +7,7 @@ const WHOLE: u64 = 0x1_0000_0000_u64;
 const HALF: u64 = WHOLE / 2;
 const QUARTER: u64 = WHOLE / 4;
 
+#[derive(Clone)]
 pub struct ArithmeticEncoder32 {
     /// Finalized bytes
     encoded: VecDeque<u8>,
@@ -75,7 +76,7 @@ impl ArithmeticEncoder32 {
             debug_assert!(start < end);
             debug_assert!(end <= denominator);
 
-            self.encode_interval(start as u64..end as u64, denominator as u64);
+            self.push_interval(start..end, denominator);
             if is_eof {
                 break;
             }
@@ -97,19 +98,19 @@ impl ArithmeticEncoder32 {
         );
         let d = e + weights.sum::<u32>();
 
-        self.encode_interval(s as u64..e as u64, d as u64)
+        self.push_interval(s..e, d)
     }
 
     #[allow(clippy::assign_op_pattern)]
-    fn encode_interval(
+    fn push_interval(
         &mut self,
-        Range { start, end }: Range<u64>,
-        denominator: u64,
+        Range { start, end }: Range<u32>,
+        denominator: u32,
     ) {
         // Calculate new interval bounds
         let w = self.b - self.a;
-        self.b = self.a + w * end / denominator;
-        self.a = self.a + w * start / denominator;
+        self.b = self.a + w * end as u64 / denominator as u64;
+        self.a = self.a + w * start as u64 / denominator as u64;
 
         // Emit bits and rescale
         // Since a < b is always true, we don't need to compare both against HALF point
@@ -145,7 +146,12 @@ impl ArithmeticEncoder32 {
 
     pub fn finalize(mut self) -> VecDeque<u8> {
         self.scales += 1;
-        self.push_hot(QUARTER < self.a);
+
+        if QUARTER < self.a {
+            self.push_bit(true);
+        } else {
+            self.push_hot(false);
+        }
 
         if self.bit_index < 0x80 {
             self.encoded.push_back(self.current)
@@ -161,10 +167,11 @@ impl Default for ArithmeticEncoder32 {
     }
 }
 
+#[derive(Clone)]
 pub struct ArithmeticDecoder32<I> {
     to_decode: I,
     /// Bit mask for the fractoinal
-    bit: u8,
+    bit_index: u8,
     current: u8,
     /// Lower bound of the current interval
     a: u64,
@@ -193,7 +200,7 @@ where
         Self {
             to_decode,
             current: 0,
-            bit: 0,
+            bit_index: 0,
             a: 0,
             b: WHOLE,
             z,
@@ -221,7 +228,7 @@ where
             debug_assert!(start < end);
             debug_assert!(end <= denominator);
 
-            self.encode_interval(start as u64..end as u64, denominator as u64);
+            self.push_interval(start..end, denominator);
 
             if let Some(symbol) = symbol {
                 sm.push(symbol);
@@ -231,34 +238,63 @@ where
         }
     }
 
+    pub fn decode_by_weights(
+        &mut self,
+        weights: impl IntoIterator<Item = u32>,
+    ) -> usize {
+        let mut cum_weights = Vec::from_iter(weights);
+
+        for i in 1..cum_weights.len() {
+            cum_weights[i] += cum_weights[i - 1];
+        }
+
+        let denominator = *cum_weights.last().unwrap();
+
+        let p = (self.z - self.a) * denominator as u64 / (self.b - self.a);
+        let symbol_index = match cum_weights.binary_search(&(p as u32)) {
+            Ok(index) => index + 1,
+            Err(index) => index,
+        };
+
+        let start = match symbol_index.checked_sub(1) {
+            Some(index) => cum_weights[index],
+            None => 0,
+        };
+        let end = cum_weights[symbol_index];
+
+        self.push_interval(start..end, denominator);
+
+        symbol_index
+    }
+
     fn rescale(&mut self) {
         self.a *= 2;
         self.b *= 2;
         self.z *= 2;
 
-        if self.bit == 0 {
-            self.bit = 0x80;
+        if self.bit_index == 0 {
+            self.bit_index = 0x80;
             self.current = self.to_decode.next().unwrap_or(0);
         }
 
-        if self.bit & self.current != 0 {
+        if self.bit_index & self.current != 0 {
             self.z += 1;
             debug_assert!(self.z < self.b);
         }
 
-        self.bit >>= 1;
+        self.bit_index >>= 1;
     }
 
     #[allow(clippy::assign_op_pattern)]
-    fn encode_interval(
+    fn push_interval(
         &mut self,
-        Range { start, end }: Range<u64>,
-        denominator: u64,
+        Range { start, end }: Range<u32>,
+        denominator: u32,
     ) {
         // Calculate new interval bounds
         let w = self.b - self.a;
-        self.b = self.a + end * w / denominator;
-        self.a = self.a + start * w / denominator;
+        self.b = self.a + end as u64 * w / denominator as u64;
+        self.a = self.a + start as u64 * w / denominator as u64;
 
         debug_assert!(self.a <= self.z);
         debug_assert!(self.z <= self.b);

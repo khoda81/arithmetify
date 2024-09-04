@@ -3,7 +3,9 @@ use std::io::Write;
 use rand::thread_rng;
 
 use super::*;
-use crate::{Distribution, SequenceModel};
+use crate::{
+    ArithmeticDecoder, ArithmeticEncoder, Distribution, SequenceModel,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Alphabet {
@@ -150,4 +152,29 @@ pub fn test_random() {
     }
 
     println!("{num_tests}/{num_tests}");
+}
+
+#[test]
+fn test_encode_by_weight() {
+    let weights = [2, 4, 6, 8];
+    let input = [1, 1, 2, 3, 2, 1, 0];
+
+    let mut encoder = ArithmeticEncoder::new();
+    for symbol in input {
+        encoder.encode_by_weights(weights, symbol);
+    }
+
+    let compressed = encoder.finalize();
+    let mut decoder = ArithmeticDecoder::new(compressed);
+
+    let mut decoded = vec![];
+    loop {
+        let symbol = decoder.decode_by_weights(weights);
+        decoded.push(symbol);
+        if symbol == 0 {
+            break;
+        }
+    }
+
+    assert_eq!(input, decoded.as_slice());
 }
