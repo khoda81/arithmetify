@@ -64,11 +64,10 @@ impl ArithmeticEncoder32 {
         symbols: impl IntoIterator<Item = S>,
     ) {
         let mut symbols = symbols.into_iter();
-        let mut remaining = true;
 
-        while remaining {
+        loop {
             let symbol = symbols.next();
-            remaining = symbol.is_some();
+            let is_eof = symbol.is_none();
 
             let pd = sm.pd();
             let denominator = pd.denominator();
@@ -77,7 +76,28 @@ impl ArithmeticEncoder32 {
             debug_assert!(end <= denominator);
 
             self.encode_interval(start as u64..end as u64, denominator as u64);
+            if is_eof {
+                break;
+            }
         }
+    }
+
+    // TODO: Implement encode by distribution iterator
+    // TODO: Encode untill pop
+
+    pub fn encode_by_weights(
+        &mut self,
+        weights: impl IntoIterator<IntoIter = impl Iterator<Item = u32>>,
+        symbol_idx: usize,
+    ) {
+        let mut weights = weights.into_iter();
+        let s = (&mut weights).take(symbol_idx).sum::<u32>();
+        let e = s + weights.next().expect(
+            "weights should have at least as many elements as symbol_idx",
+        );
+        let d = e + weights.sum::<u32>();
+
+        self.encode_interval(s as u64..e as u64, d as u64)
     }
 
     #[allow(clippy::assign_op_pattern)]
@@ -150,8 +170,6 @@ pub struct ArithmeticDecoder32<I> {
     a: u64,
     /// Upper bound of the current interval
     b: u64,
-    /// Counter for follow bits
-    scales: u32,
     z: u64,
 }
 
@@ -179,7 +197,6 @@ where
             a: 0,
             b: WHOLE,
             z,
-            scales: 0,
         }
     }
 
@@ -260,7 +277,6 @@ where
 
         // E3 scaling
         while QUARTER < self.a && self.b < HALF + QUARTER {
-            self.scales += 1;
             self.rescale();
             self.a -= HALF;
             self.b -= HALF;

@@ -7,5 +7,10 @@ edition = "2021"
 
 [dependencies]
 
+[[bench]]
+name = "bench_arith32"
+harness = false
+
 [dev-dependencies]
+criterion = "0.5.1"
 rand = "0.8.5"
