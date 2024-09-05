@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 
 use super::*;
 use crate::{
@@ -156,12 +156,37 @@ pub fn test_random() {
 
 #[test]
 fn test_encode_by_weight() {
-    let weights = [2, 4, 6, 8];
-    let input = [1, 1, 2, 3, 2, 1, 0];
+    test_distribution(&[100, 345, 102, 534, 435]);
+    test_distribution(&[10]);
+    test_distribution(&[1, 1, 1]);
+}
+
+fn test_distribution(weights: &[u32]) {
+    let rng = &mut thread_rng();
+    let mut cum_weights: Box<[u32]> = weights.into();
+    for i in 1..cum_weights.len() {
+        cum_weights[i] += cum_weights[i - 1];
+    }
+
+    let total_weights = *cum_weights
+        .last()
+        .expect("There should be at least one symbol");
+
+    let mut input = Vec::new();
+    loop {
+        let p = rng.gen_range(0..total_weights);
+        let symbol = match cum_weights.binary_search(&p) {
+            Ok(sym) => sym + 1,
+            Err(sym) => sym,
+        };
+
+        input.push(symbol);
+        let 1.. = symbol else { break };
+    }
 
     let mut encoder = ArithmeticEncoder::new();
-    for symbol in input {
-        encoder.encode_by_weights(weights, symbol);
+    for symbol in &input {
+        encoder.encode_by_weights(weights.iter().copied(), *symbol);
     }
 
     let compressed = encoder.finalize();
@@ -169,11 +194,10 @@ fn test_encode_by_weight() {
 
     let mut decoded = vec![];
     loop {
-        let symbol = decoder.decode_by_weights(weights);
+        let symbol = decoder.decode_by_weights(weights.iter().copied());
         decoded.push(symbol);
-        if symbol == 0 {
-            break;
-        }
+
+        let 1.. = symbol else { break };
     }
 
     assert_eq!(input, decoded.as_slice());

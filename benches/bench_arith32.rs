@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use arithmetify::{
+    ArithmeticDecoder, ArithmeticEncoder, Distribution, SequenceModel,
+};
 use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
     Throughput,
-};
-use enigmathic::{
-    ArithmeticDecoder, ArithmeticEncoder, Distribution, SequenceModel,
 };
 use rand::thread_rng;
 
@@ -137,6 +137,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut sm = SM(Vec::new());
         encoder.encode(&mut sm, symbols.iter().copied());
         let bytes = encoder.finalize();
+
         group.throughput(Throughput::Bytes(bytes.len() as u64));
 
         // Benchmark for encoding
@@ -148,6 +149,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 black_box(encoder.finalize());
             });
         });
+
+        group.throughput(Throughput::Bytes(bytes.len() as u64));
 
         // Benchmark for decoding
         group.bench_function(BenchmarkId::new("decode", &parameter), |b| {

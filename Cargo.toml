@@ -6,7 +6,7 @@ authors = ["Mahdi Khodabandeh <20.mahdikh.0@gmail.com>"]
 description = "A simple implementation of arithmetic coding"
 repository = "https://github.com/khoda81/arithmetify"
 readme = "README.md"
-license-file = "LICENSE"
+license = "MIT"
 keywords = ["arithmetic-coding", "compression", "data-compression", "entropy-coding", "library"]
 categories = ["algorithms", "compression"]
 

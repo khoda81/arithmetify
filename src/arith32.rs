@@ -1,3 +1,45 @@
+//! This module implements a 32-bit arithmetic encoder and decoder for compressing data based on symbol probabilities.
+//!
+//! # Overview
+//! Arithmetic encoding compresses data by representing sequences of symbols with intervals in a continuous range of real numbers. The probability of each symbol determines the size of the interval it occupies. This module provides:
+//!
+//! - `ArithmeticEncoder32`: Encodes symbols into a compressed bitstream using arithmetic encoding.
+//! - `ArithmeticDecoder32`: Decodes compressed data back into the original symbols using arithmetic decoding.
+//!
+//! # Example Usage
+//! ```
+//! // Define symbol weights corresponding to their probabilities.
+//! let weights = [2, 4, 6, 8];  // Example weights for symbols
+//! // Input symbols to encode.
+//! let input = [1, 1, 2, 3, 2, 1, 0];  // Sequence of symbols to be encoded
+//!
+//! // Create a new encoder instance.
+//! let mut encoder = ArithmeticEncoder::new();
+//! // Encode each symbol in the input sequence by its weights.
+//! for symbol in input {
+//!     encoder.encode_by_weights(weights, symbol);
+//! }
+//!
+//! // Finalize the encoding process and obtain the compressed data.
+//! let compressed = encoder.finalize();
+//!
+//! // Create a new decoder instance from the compressed data.
+//! let mut decoder = ArithmeticDecoder::new(compressed);
+//!
+//! // Decode the compressed data back to symbols.
+//! let mut decoded = vec![];
+//! loop {
+//!     let symbol = decoder.decode_by_weights(weights);  // Decode the next symbol
+//!     decoded.push(symbol);  // Store the decoded symbol
+//!     if symbol == 0 {  // Stop decoding when reaching the end-of-sequence symbol
+//!         break;
+//!     }
+//! }
+//!
+//! // Verify that the original input matches the decoded symbols.
+//! assert_eq!(input, decoded.as_slice());
+//! ```
+
 use std::{collections::VecDeque, fmt::Debug, ops::Range};
 
 use super::SequenceModel;
@@ -7,6 +49,23 @@ const WHOLE: u64 = 0x1_0000_0000_u64;
 const HALF: u64 = WHOLE / 2;
 const QUARTER: u64 = WHOLE / 4;
 
+/// A 32-bit arithmetic encoder that compresses data by encoding symbols
+/// into a bitstream based on their probabilities.
+///
+/// # Example:
+/// ```
+/// use arithmetify::arith32::ArithmeticEncoder32;
+///
+/// let weights = [2, 1, 1];
+/// let mut encoder = ArithmeticEncoder32::new();
+/// encoder.encode_by_weights(weights, 2);
+/// encoder.encode_by_weights(weights, 2);
+/// encoder.encode_by_weights(weights, 1);
+/// encoder.encode_by_weights(weights, 1);
+/// encoder.encode_by_weights(weights, 0);
+/// let compressed_data = encoder.finalize();
+/// assert_eq!(compressed_data, [0b11111010]);
+/// ```
 #[derive(Clone)]
 pub struct ArithmeticEncoder32 {
     /// Finalized bytes
@@ -34,9 +93,10 @@ impl ArithmeticEncoder32 {
         }
     }
 
-    /// Push a single bit to the output stream
+    /// Pushes a single bit to the output stream.
+    /// This is used internally during encoding.
     #[inline]
-    fn push_bit(&mut self, is_one: bool) {
+    fn emit_bit(&mut self, is_one: bool) {
         if is_one {
             self.current |= self.bit_index;
         }
@@ -51,17 +111,27 @@ impl ArithmeticEncoder32 {
         }
     }
 
+    /// Pushes the current bit followed by a sequence of follow bits.
+    ///
+    /// The follow bits are determined by the value of `self.scales`.
+    /// If `one_follow` is true, it will push a `1` followed by `self.scales` number of `0` bits.
+    /// If `one_follow` is false, it will push a `0` followed by `self.scales` number of `1` bits.
     fn push_hot(&mut self, one_hot: bool) {
-        self.push_bit(one_hot);
+        self.emit_bit(one_hot);
         while self.scales > 0 {
-            self.push_bit(!one_hot);
+            self.emit_bit(!one_hot);
             self.scales -= 1;
         }
     }
 
+    /// Encodes a sequence of symbols using the provided sequence model `sm`.
+    ///
+    /// # Parameters:
+    /// - `sequence_model`: The sequence model used for encoding
+    /// - `symbols`: An iterable collection of symbols to encode
     pub fn encode<S>(
         &mut self,
-        sm: &mut impl SequenceModel<S, u32>,
+        sequence_model: &mut impl SequenceModel<S, u32>,
         symbols: impl IntoIterator<Item = S>,
     ) {
         let mut symbols = symbols.into_iter();
@@ -70,7 +140,7 @@ impl ArithmeticEncoder32 {
             let symbol = symbols.next();
             let is_eof = symbol.is_none();
 
-            let pd = sm.pd();
+            let pd = sequence_model.pd();
             let denominator = pd.denominator();
             let Range { start, end } = pd.numerator_range(symbol.as_ref());
             debug_assert!(start < end);
@@ -83,9 +153,22 @@ impl ArithmeticEncoder32 {
         }
     }
 
-    // TODO: Implement encode by distribution iterator
     // TODO: Encode untill pop
 
+    /// Encodes a symbol based on a list of weights and the index of the symbol.
+    ///
+    /// # Parameters:
+    /// - `weights`: A collection of weights corresponding to the probabilities of each symbol
+    /// - `symbol_idx`: The index of the symbol to encode
+    ///
+    /// # Example:
+    /// ```
+    /// use arithmetify::arith32::ArithmeticEncoder32;
+    ///
+    /// let mut encoder = ArithmeticEncoder32::new();
+    /// let weights = vec![2, 3, 5]; // Probabilities for each symbol
+    /// encoder.encode_by_weights(weights, 1); // Encode the second symbol (index 1)
+    /// ```
     pub fn encode_by_weights(
         &mut self,
         weights: impl IntoIterator<IntoIter = impl Iterator<Item = u32>>,
@@ -144,11 +227,12 @@ impl ArithmeticEncoder32 {
         self.encoded.pop_front()
     }
 
+    /// Finalizes the encoding process and returns the encoded data as a byte stream.
     pub fn finalize(mut self) -> VecDeque<u8> {
         self.scales += 1;
 
         if QUARTER < self.a {
-            self.push_bit(true);
+            self.emit_bit(true);
         } else {
             self.push_hot(false);
         }
@@ -167,6 +251,21 @@ impl Default for ArithmeticEncoder32 {
     }
 }
 
+/// A 32-bit arithmetic decoder that decompresses data based on the encoded bitstream.
+///
+/// # Example:
+/// ```
+/// use arithmetify::arith32::ArithmeticDecoder32;
+///
+/// let weights = [2, 1, 1];
+/// let mut decoder = ArithmeticDecoder32::new([0b11111010]);
+///
+/// assert_eq!(decoder.decode_by_weights(weights), 2);
+/// assert_eq!(decoder.decode_by_weights(weights), 2);
+/// assert_eq!(decoder.decode_by_weights(weights), 1);
+/// assert_eq!(decoder.decode_by_weights(weights), 1);
+/// assert_eq!(decoder.decode_by_weights(weights), 0);
+/// ```
 #[derive(Clone)]
 pub struct ArithmeticDecoder32<I> {
     to_decode: I,
@@ -184,6 +283,18 @@ impl<I> ArithmeticDecoder32<I>
 where
     I: Iterator<Item = u8>,
 {
+    /// Creates a new `ArithmeticDecoder32` with the given byte stream.
+    ///
+    /// # Parameters:
+    /// - `bytes`: An iterator of bytes that represents the encoded data
+    ///
+    /// # Example:
+    /// ```
+    /// use arithmetify::arith32::ArithmeticDecoder32;
+    ///
+    /// let encoded_data = vec![/* some encoded bytes */];
+    /// let mut decoder = ArithmeticDecoder32::new(encoded_data);
+    /// ```
     pub fn new(bytes: impl IntoIterator<Item = u8, IntoIter = I>) -> Self {
         let mut z = 0;
         let mut to_decode = bytes.into_iter();
@@ -207,13 +318,17 @@ where
         }
     }
 
-    pub fn decode<S>(&mut self, sm: &mut impl SequenceModel<S, u32>)
-    where
-        // TODO: Remove
-        S: Debug,
-    {
+    /// Decodes symbols using the provided sequence model `sm`.
+    ///
+    /// # Parameters:
+    /// - `sequence_model`: A reference to an implementation of `SequenceModel`
+    /// ```
+    pub fn decode<S>(
+        &mut self,
+        sequence_model: &mut impl SequenceModel<S, u32>,
+    ) {
         loop {
-            let pd = sm.pd();
+            let pd = sequence_model.pd();
             let denominator = pd.denominator();
 
             debug_assert!(self.a <= self.z);
@@ -231,13 +346,35 @@ where
             self.push_interval(start..end, denominator);
 
             if let Some(symbol) = symbol {
-                sm.push(symbol);
+                sequence_model.push(symbol);
             } else {
                 break;
             }
         }
     }
 
+    /// Decodes a symbol based on a list of weights representing symbol probabilities.
+    ///
+    /// This method uses cumulative weights to determine which symbol corresponds to
+    /// the current interval and decodes it.
+    ///
+    /// # Parameters:
+    /// - `weights`: A collection of weights that represent the probabilities for each symbol.
+    ///
+    /// # Returns:
+    /// - The index of the decoded symbol based on the weights.
+    ///
+    /// # Example:
+    /// ```
+    /// use arithmetify::arith32::ArithmeticDecoder32;
+    ///
+    /// let encoded_bytes = [0b_0101_0000]; // Encoded data
+    /// let weights = [2, 3, 5]; // Probabilities for each symbol
+    ///
+    /// let mut decoder = ArithmeticDecoder32::new(encoded_bytes);
+    /// let decoded_symbol = decoder.decode_by_weights(weights);
+    /// assert_eq!(decoded_symbol, 1); // Decodes to the second symbol (index 1)
+    /// ```
     pub fn decode_by_weights(
         &mut self,
         weights: impl IntoIterator<Item = u32>,
