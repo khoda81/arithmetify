@@ -1,6 +1,6 @@
 [package]
 name = "arithmetify"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Mahdi Khodabandeh <20.mahdikh.0@gmail.com>"]
 description = "A simple implementation of arithmetic coding"
