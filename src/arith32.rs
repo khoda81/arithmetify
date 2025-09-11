@@ -86,7 +86,7 @@ impl Interval {
 #[derive(Clone)]
 pub struct ArithmeticEncoder32 {
     /// Finalized bytes
-    encoded: VecDeque<u8>,
+    pub encoded: VecDeque<u8>,
     /// Bit mask for the fractoinal
     bit_index: u8,
     current: u8,
