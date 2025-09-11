@@ -1,13 +1,19 @@
 [package]
 name = "arithmetify"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Mahdi Khodabandeh <20.mahdikh.0@gmail.com>"]
 description = "A simple implementation of arithmetic coding"
 repository = "https://github.com/khoda81/arithmetify"
 readme = "README.md"
 license = "MIT"
-keywords = ["arithmetic-coding", "compression", "data-compression", "entropy-coding", "library"]
+keywords = [
+    "arithmetic-coding",
+    "compression",
+    "data-compression",
+    "entropy-coding",
+    "library",
+]
 categories = ["algorithms", "compression"]
 
 [dependencies]
@@ -17,5 +23,5 @@ name = "bench_arith32"
 harness = false
 
 [dev-dependencies]
-criterion = "0.5.1"
-rand = "0.8.5"
+criterion = "0.7"
+rand = "0.9"

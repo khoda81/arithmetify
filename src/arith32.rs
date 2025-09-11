@@ -40,7 +40,7 @@
 //! assert_eq!(input, decoded.as_slice());
 //! ```
 
-use std::{collections::VecDeque, fmt::Debug, ops::Range};
+use std::{collections::VecDeque, ops::Range};
 
 use super::SequenceModel;
 use crate::Distribution as _;
@@ -48,6 +48,23 @@ use crate::Distribution as _;
 const WHOLE: u64 = 0x1_0000_0000_u64;
 const HALF: u64 = WHOLE / 2;
 const QUARTER: u64 = WHOLE / 4;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Interval {
+    start: u32,
+    end: u32,
+    denominator: u32,
+}
+
+impl Interval {
+    pub fn new(pre: u32, mid: u32, after: u32) -> Self {
+        Self {
+            start: pre,
+            end: pre + mid,
+            denominator: pre + mid + after,
+        }
+    }
+}
 
 /// A 32-bit arithmetic encoder that compresses data by encoding symbols
 /// into a bitstream based on their probabilities.
@@ -182,6 +199,10 @@ impl ArithmeticEncoder32 {
         let d = e + weights.sum::<u32>();
 
         self.push_interval(s..e, d)
+    }
+
+    pub fn encode_interval(&mut self, interval: Interval) {
+        self.push_interval(interval.start..interval.end, interval.denominator)
     }
 
     #[allow(clippy::assign_op_pattern)]
