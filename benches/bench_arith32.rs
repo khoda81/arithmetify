@@ -1,13 +1,11 @@
-use std::time::Duration;
+use std::{hint::black_box, time::Duration};
 
 use arithmetify::{
     ArithmeticDecoder, ArithmeticEncoder, Distribution, SequenceModel,
 };
 use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion,
-    Throughput,
+    criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
 };
-use rand::thread_rng;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Alphabet {
@@ -22,7 +20,7 @@ impl PD {
     const WEIGHTS: [u32; 4] = [1, 1000, 10, 1];
 
     fn sample(&self, rng: &mut impl rand::Rng) -> Option<Alphabet> {
-        let p = rng.gen_range(0..self.denominator());
+        let p = rng.random_range(0..self.denominator());
         self.symbol_lookup(p)
     }
 
@@ -123,7 +121,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::new(10, 0));
 
-    let distributions = vec![
+    let distributions = [
         PD, // Add more distributions here as needed
     ];
 
@@ -131,7 +129,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let parameter = format!("{pd:?}");
 
         let symbols: Vec<Alphabet> =
-            SM::new().sample(&mut thread_rng()).into_sequence();
+            SM::new().sample(&mut rand::rng()).into_sequence();
 
         let mut encoder = ArithmeticEncoder::new();
         let mut sm = SM(Vec::new());
